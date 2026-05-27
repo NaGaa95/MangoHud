@@ -548,7 +548,7 @@ static void check_thermal_zones(std::string& path, std::string& input) {
             continue;
 
         std::string type = read_line(d / "type");
-        if (type.substr(0, 6) != "cpuss-")
+        if (type != "CPU-therm" && !starts_with(type, "cpuss-"))
             continue;
 
         path = d.path();

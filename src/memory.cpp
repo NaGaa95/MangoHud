@@ -11,8 +11,21 @@
 #include "hud_elements.h"
 
 float memused, memmax, swapused;
-int mem_temp;
+int mem_temp, memclock, membandwidth;
 uint64_t proc_mem_resident, proc_mem_shared, proc_mem_virt;
+
+static bool read_int64_sysfs(const std::string& path, int64_t& value) {
+    const std::string line = read_line(path);
+    if (line.empty())
+        return false;
+
+    try {
+        value = std::stoll(line);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 
 void update_meminfo() {
     std::ifstream file("/proc/meminfo");
@@ -32,6 +45,18 @@ void update_meminfo() {
     memmax = meminfo["MemTotal"];
     memused = meminfo["MemTotal"] - meminfo["MemAvailable"];
     swapused = meminfo["SwapTotal"] - meminfo["SwapFree"];
+
+    int64_t emc_clock = 0;
+    if (read_int64_sysfs("/sys/kernel/debug/clk/emc/clk_rate", emc_clock))
+        memclock = emc_clock / 1000000;
+    else
+        memclock = 0;
+
+    int64_t mc_activity = 0;
+    if (memclock > 0 && read_int64_sysfs("/sys/kernel/actmon_avg_activity/mc_all", mc_activity))
+        membandwidth = mc_activity / memclock / 10;
+    else
+        membandwidth = 0;
 }
 
 void update_mem_temp() {

@@ -36,7 +36,7 @@ class GPU {
         )
             : drm_node(drm_node), pci_dev(pci_dev), vendor_id(vendor_id), device_id(device_id),
             driver(driver) {
-                if (vendor_id == 0x10de)
+                if (vendor_id == 0x10de || driver == "nvidia")
                     nvidia = std::make_unique<NVIDIA>(pci_dev);
 
                 if (vendor_id == 0x1002)

@@ -753,7 +753,9 @@ void HudElements::proc_vram() {
 void HudElements::ram(){
 #ifdef __linux__
     if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram] ||
-        HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_temp]) {
+        HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_temp] ||
+        HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_clock] ||
+        HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_bandwidth]) {
         ImguiNextColumnFirstItem();
         HUDElements.TextColored(HUDElements.colors.ram, "RAM");
     }
@@ -767,6 +769,22 @@ void HudElements::ram(){
             HUDElements.TextColored(HUDElements.colors.text, "GiB");
             ImGui::PopFont();
         }
+    }
+
+    if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_clock]) {
+        ImguiNextColumnOrNewRow();
+        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%i", memclock);
+        ImGui::SameLine(0, 1.0f);
+        ImGui::PushFont(HUDElements.sw_stats->font_small);
+        HUDElements.TextColored(HUDElements.colors.text, "MHz");
+        ImGui::PopFont();
+    }
+
+    if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram_bandwidth]) {
+        ImguiNextColumnOrNewRow();
+        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%i", membandwidth);
+        ImGui::SameLine(0, 1.0f);
+        HUDElements.TextColored(HUDElements.colors.text, "%%");
     }
 
     if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_ram] && HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_swap]){
@@ -1969,6 +1987,9 @@ void HudElements::sort_elements(const std::pair<std::string, std::string>& optio
         {"vram", {vram}},
         {"proc_vram", {proc_vram}},
         {"ram", {ram}},
+        {"ram_temp", {ram}},
+        {"ram_clock", {ram}},
+        {"ram_bandwidth", {ram}},
         {"fps", {fps}},
         {"gpu_name", {gpu_name}},
         {"frame_timing", {frame_timing}},
@@ -2012,6 +2033,12 @@ void HudElements::sort_elements(const std::pair<std::string, std::string>& optio
                 [](const auto& a) { return a.name == "io_stats"; })) {
                 ordered_functions.push_back({io_stats, "io_stats", value});
             }
+        } else if (param == "ram" || param == "ram_temp" || param == "ram_clock" || param == "ram_bandwidth") {
+            // Don't add the shared RAM block more than once.
+            if (std::none_of(ordered_functions.begin(), ordered_functions.end(),
+                [](const auto& a) { return a.name == "ram"; })) {
+                ordered_functions.push_back({ram, "ram", value});
+            }
         } else if (param == "exec") {
             ordered_functions.push_back({_exec, "exec", value});
             exec_list.push_back({int(ordered_functions.size() - 1), value});
@@ -2053,7 +2080,10 @@ void HudElements::legacy_elements(const overlay_params* temp_params){
         ordered_functions.push_back({vram, "vram", value});
     if (temp_params->enabled[OVERLAY_PARAM_ENABLED_proc_vram])
         ordered_functions.push_back({proc_vram, "proc_vram", value});
-    if (temp_params->enabled[OVERLAY_PARAM_ENABLED_ram])
+    if (temp_params->enabled[OVERLAY_PARAM_ENABLED_ram] ||
+        temp_params->enabled[OVERLAY_PARAM_ENABLED_ram_temp] ||
+        temp_params->enabled[OVERLAY_PARAM_ENABLED_ram_clock] ||
+        temp_params->enabled[OVERLAY_PARAM_ENABLED_ram_bandwidth])
         ordered_functions.push_back({ram, "ram", value});
     if (temp_params->enabled[OVERLAY_PARAM_ENABLED_procmem])
         ordered_functions.push_back({procmem, "procmem", value});

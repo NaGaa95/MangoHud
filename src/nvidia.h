@@ -14,6 +14,7 @@ class NVIDIA {
 
         bool nvml_available = false;
         bool nvctrl_available = false;
+        bool tegra_available = false;
 
         gpu_metrics copy_metrics() {
             std::lock_guard<std::mutex> lock(metrics_mutex);
@@ -111,5 +112,14 @@ class NVIDIA {
         void parse_token(const std::string& token, std::unordered_map<std::string, std::string>& options);
         bool find_nv_x11(Display*& dpy);
         char* get_attr_target_string(int attr, int target_type, int target_id);
+#endif
+
+#ifdef __linux__
+        std::string tegra_load_path;
+        std::string tegra_temp_path;
+        std::string tegra_core_clock_path;
+
+        bool init_tegra();
+        void get_instant_metrics_tegra(struct gpu_metrics *metrics, struct overlay_params *params);
 #endif
 };

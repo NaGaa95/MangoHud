@@ -4,6 +4,7 @@
 #include "hud_elements.h"
 #include "logging.h"
 #include "string_utils.h"
+#include "file_utils.h"
 #include <thread>
 #include <chrono>
 #include "mesa/util/macros.h"
@@ -26,6 +27,66 @@ void NVIDIA::parse_token(const std::string& token, std::unordered_map<std::strin
 }
 #endif
 
+#ifdef __linux__
+static bool read_int64_sysfs(const std::string& path, int64_t& value) {
+    const std::string line = read_line(path);
+    if (line.empty())
+        return false;
+
+    try {
+        value = std::stoll(line);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool NVIDIA::init_tegra() {
+    const std::string load_path = "/sys/devices/gpu.0/load";
+    if (file_exists(load_path))
+        tegra_load_path = load_path;
+
+    const std::string thermal = "/sys/class/thermal/";
+    if (dir_exists(thermal)) {
+        for (const auto& dir : ls(thermal.c_str(), "thermal_zone", LS_DIRS)) {
+            const std::string path = thermal + dir;
+            if (read_line(path + "/type") != "GPU-therm")
+                continue;
+
+            const std::string input = path + "/temp";
+            if (file_exists(input)) {
+                tegra_temp_path = input;
+                break;
+            }
+        }
+    }
+
+    const std::string devfreq = "/sys/devices/gpu.0/devfreq/";
+    if (dir_exists(devfreq)) {
+        for (const auto& dir : ls(devfreq.c_str())) {
+            const std::string input = devfreq + dir + "/cur_freq";
+            if (file_exists(input)) {
+                tegra_core_clock_path = input;
+                break;
+            }
+        }
+    }
+
+    const bool available = !tegra_load_path.empty()
+        || !tegra_temp_path.empty()
+        || !tegra_core_clock_path.empty();
+
+    if (available) {
+        SPDLOG_INFO(
+            "Tegra sysfs metrics available: load='{}' temp='{}' core_clock='{}'",
+            tegra_load_path, tegra_temp_path, tegra_core_clock_path
+        );
+    }
+
+    return available;
+}
+#endif
+
 NVIDIA::NVIDIA(const char* pciBusId) {
 #ifdef HAVE_NVML
     if (nvml && nvml->IsLoaded()) {
@@ -35,12 +96,14 @@ NVIDIA::NVIDIA(const char* pciBusId) {
             nvml_available = false;
         } else {
             nvml_available = true; // NVML initialized successfully
-            if (pciBusId) {
+            if (pciBusId && pciBusId[0] != '\0') {
                 result = nvml->nvmlDeviceGetHandleByPciBusId_v2(pciBusId, &device);
                 if (NVML_SUCCESS != result) {
                     SPDLOG_ERROR("Getting device handle by PCI bus ID failed: {}", nvml->nvmlErrorString(result));
                     nvml_available = false; // Revert if getting device handle fails
                 }
+            } else {
+                nvml_available = false;
             }
         }
     }
@@ -65,12 +128,16 @@ NVIDIA::NVIDIA(const char* pciBusId) {
 
 #endif
 
-    if (nvml_available || nvctrl_available) {
+#ifdef __linux__
+    tegra_available = init_tegra();
+#endif
+
+    if (nvml_available || nvctrl_available || tegra_available) {
         throttling = std::make_shared<Throttling>(0x10de);
         thread = std::thread(&NVIDIA::get_samples_and_copy, this);
         pthread_setname_np(thread.native_handle(), "mangohud-nvidia");
     } else {
-        SPDLOG_WARN("NVML and NVCTRL are unavailable. Unable to get NVIDIA info. User is on DFSG version of mangohud?");
+        SPDLOG_WARN("NVML, NVCTRL, and Tegra sysfs metrics are unavailable. Unable to get NVIDIA info. User is on DFSG version of mangohud?");
     }
 }
 
@@ -221,6 +288,31 @@ void NVIDIA::get_instant_metrics_xnvctrl(struct gpu_metrics *metrics) {
 }
 #endif
 
+#ifdef __linux__
+void NVIDIA::get_instant_metrics_tegra(struct gpu_metrics *metrics, struct overlay_params *params) {
+    int64_t value = 0;
+
+    if (!tegra_load_path.empty() && read_int64_sysfs(tegra_load_path, value))
+        metrics->load = value / 10;
+
+    if (
+        (params->enabled[OVERLAY_PARAM_ENABLED_gpu_temp] || (logger && logger->is_active())) &&
+        !tegra_temp_path.empty() &&
+        read_int64_sysfs(tegra_temp_path, value)
+    ) {
+        metrics->temp = value / 1000;
+    }
+
+    if (
+        (params->enabled[OVERLAY_PARAM_ENABLED_gpu_core_clock] || (logger && logger->is_active())) &&
+        !tegra_core_clock_path.empty() &&
+        read_int64_sysfs(tegra_core_clock_path, value)
+    ) {
+        metrics->CoreClock = value / 1000000;
+    }
+}
+#endif
+
 void NVIDIA::get_samples_and_copy() {
     struct gpu_metrics metrics_buffer[METRICS_SAMPLE_COUNT] {};
     auto logger_ref = logger; // inc ref count, to avoid destruction of logger.
@@ -242,6 +334,10 @@ void NVIDIA::get_samples_and_copy() {
 #if defined(HAVE_XNVCTRL) && defined(HAVE_X11)
         if (nvctrl_available)
             NVIDIA::get_instant_metrics_xnvctrl(&metrics_buffer[cur_sample_id]);
+#endif
+#ifdef __linux__
+        if (tegra_available)
+            NVIDIA::get_instant_metrics_tegra(&metrics_buffer[cur_sample_id], params_p);
 #endif
             usleep(METRICS_POLLING_PERIOD_MS * 1000);
         }

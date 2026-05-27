@@ -52,6 +52,8 @@ struct Tracepoint;
    OVERLAY_PARAM_BOOL(gpu_stats)                     \
    OVERLAY_PARAM_BOOL(ram)                           \
    OVERLAY_PARAM_BOOL(ram_temp)                      \
+   OVERLAY_PARAM_BOOL(ram_clock)                     \
+   OVERLAY_PARAM_BOOL(ram_bandwidth)                 \
    OVERLAY_PARAM_BOOL(swap)                          \
    OVERLAY_PARAM_BOOL(vram)                          \
    OVERLAY_PARAM_BOOL(proc_vram)                     \

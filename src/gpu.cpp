@@ -4,6 +4,11 @@
 
 namespace fs = ghc::filesystem;
 
+static bool has_tegra_sysfs_gpu() {
+    return file_exists("/sys/devices/gpu.0/load") ||
+           dir_exists("/sys/devices/gpu.0/devfreq/");
+}
+
 GPUS::GPUS(const overlay_params* early_params) {
     std::set<std::string> gpu_entries;
     auto params = early_params ? early_params : get_params().get();
@@ -93,6 +98,15 @@ GPUS::GPUS(const overlay_params* early_params) {
             );
             total_active++;
         }
+    }
+
+    if (available_gpus.empty() && has_tegra_sysfs_gpu()) {
+        auto ptr = std::make_shared<GPU>("gpu.0", 0x10de, 0, "", "tegra");
+        ptr->is_active = true;
+        available_gpus.emplace_back(ptr);
+        total_active++;
+
+        SPDLOG_INFO("GPU Found: using Tegra sysfs metrics from /sys/devices/gpu.0");
     }
 
     if (total_active < 2)
